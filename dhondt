@@ -1,0 +1,147 @@
+#!/usr/bin/env python3
+
+#
+# A few different formulas for quotients.
+#
+
+def dhondt_formula(votes, seats):
+    return votes / (seats + 1)
+
+def sl_formula(votes, seats):
+    return votes / (2 * seats + 1)
+
+def modified_sl_formula(votes, seats):
+    divisor = 1.4 if seats == 0 else (2 * seats + 1)
+    return votes / divisor
+
+# Calculates the number of seats for each party using the given quotient
+# formula.
+#
+# - party_votes is a dictionary with party names and their number of votes.
+# - seats is the total number of seats to allocate.
+#
+# Returns the result as a dictionary with party names and number of seats.
+#
+def proportional_seats(party_votes, total_seats, quotient_formula):
+    # Calculate the quotients matrix (list in this case).
+    quot = []
+    ret = dict()
+    for p in party_votes:
+        ret[p] = 0
+        for s in range(0, total_seats):
+            q = quotient_formula(party_votes[p], s)
+            quot.append((q, p))
+
+    # Sort the quotients by value.
+    quot.sort(reverse=True)
+
+    # Take the highest quotients with the assigned parties.
+    for s in range(0, total_seats):
+        ret[quot[s][1]] += 1
+    return ret
+
+# Loads voting data from the given stream.
+#
+# - Lines starting with "#" are considered comments.
+# - Empty lines are ignored.
+# - The first valid line contains the total number of seats.
+# - Party names and number of votes are separated with semicolons.
+#
+# Returns a tuple (total_seats, votes) with total_seats being a number and votes
+# being a dictionary.
+#
+def load_data(stream):
+    total_seats = 0
+    have_seats = False
+    votes = dict()
+    for line in stream:
+        if line.startswith("#"):
+            continue
+        line = line.strip()
+        if len(line) == 0:
+            continue
+        if not have_seats:
+            total_seats = int(line)
+            have_seats = True
+        else:
+            fields = line.split(";")
+            (party_str, votes_str) = tuple(fields)
+            votes[party_str] = int(votes_str)
+    return (total_seats, votes)
+
+# Get file names.
+import sys
+try:
+    (input_filename, output_filename) = tuple(sys.argv[1:])
+except ValueError:
+    sys.exit("Usage: %s VOTING_DATA_FILE OUTPUT_HTML_FILE" % (sys.argv[0], ))
+
+# Load input data.
+try:
+    with open(input_filename, "r") as stream:
+        (total_seats, votes) = load_data(stream)
+except IOError:
+    sys.exit("Unable to open data file")
+except ValueError:
+    sys.exit("Invalid line in data file")
+
+# Calculate seats.
+dhondt_seats = proportional_seats(votes, total_seats, dhondt_formula)
+sl_seats = proportional_seats(votes, total_seats, sl_formula)
+modified_sl_seats = proportional_seats(votes, total_seats, modified_sl_formula)
+
+# Calculate percentages.
+total_votes = sum(votes.values())
+votes_pct = dict((p, votes[p] / total_votes * 100) for p in votes)
+dhondt_seats_pct = dict(
+        (p, dhondt_seats[p] / total_seats * 100) for p in dhondt_seats)
+sl_seats_pct = dict(
+        (p, sl_seats[p] / total_seats * 100) for p in sl_seats)
+modified_sl_seats_pct = dict(
+        (p, modified_sl_seats[p] / total_seats * 100)
+        for p in modified_sl_seats)
+
+# Write results as an HTML table.
+import locale
+sorted_parties = [(votes[p], p) for p in votes]
+sorted_parties.sort(reverse=True)
+sorted_parties = [x[1] for x in sorted_parties]
+
+try:
+    with open(output_filename, "w") as out:
+        def xprint(something):
+            return print(something, file=out)
+
+        xprint("<html><head>")
+        xprint('<meta http-equiv="Content-Type" '
+                + 'content="text/html; charset=%s" />'
+                % (locale.getpreferredencoding(), ))
+        xprint("<title>Single voting district for %s</title>"
+                % (input_filename, ))
+        xprint('<style type="text/css">')
+        xprint("    th, td { padding: 0 .25ex; }")
+        xprint("    body { font-family: monospace; }")
+        xprint("</style>")
+        xprint("</head><body><table border=1>")
+        xprint("<tr>" 
+                + "<th>Party</th><th>Votes</th><th>Votes %</th>"
+                + "<th>DH seats</th><th>DH %</th>"
+                + "<th>SL seats</th><th>SL %</th>"
+                + "<th>MSL seats</th><th>MSL %</th>"
+                + "</tr>"
+                )
+        for p in sorted_parties:
+            xprint("<tr>")
+            xprint("<td>%s</td>" % (p, ))
+            xprint("<td>%s</td>" % (votes[p], ))
+            xprint("<td>%.2f</td>" % (votes_pct[p], ))
+            xprint("<td>%s</td>" % (dhondt_seats[p], ))
+            xprint("<td>%.2f</td>" % (dhondt_seats_pct[p], ))
+            xprint("<td>%s</td>" % (sl_seats[p], ))
+            xprint("<td>%.2f</td>" % (sl_seats_pct[p], ))
+            xprint("<td>%s</td>" % (modified_sl_seats[p], ))
+            xprint("<td>%.2f</td>" % (modified_sl_seats_pct[p], ))
+            xprint("</tr>")
+        xprint("</table></body></html>")
+except IOError:
+    sys.exit("Unable to write results to output file")
